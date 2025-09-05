@@ -163,8 +163,6 @@ protected:
 private:
 	MESH* selected_mesh_ = nullptr;
 
-	// geometry::DistanceHeatSolver<MESH>* distanceHeatSolver = nullptr;
-
 	std::shared_ptr<Attribute<Vec3>> selected_vertex_position_ = nullptr;
 	CellsSet<MESH, Vertex>* selected_vertices_set_ = nullptr;
 

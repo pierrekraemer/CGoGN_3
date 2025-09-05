@@ -54,16 +54,173 @@ class IntrinsicTriangulation
 	using Vec3 = geometry::Vec3;
 	using Scalar = geometry::Scalar;
 
-public:
-	/*
-	template <typename MESH>
-	IntrinsicTriangulation(const MESH& m, const std::shared_ptr<Attribute<Vec3>> vertex_position)
+	struct ExtrinsicElement
 	{
-		// TODO
-		// convert MESH to CMap2
-		// IntrinsicTriangulation(m_converted, vertex_position):
+		enum class Type
+		{
+			Vertex,
+			Edge,
+			Face
+		};
+
+		Type type;
+		Dart reference;
+		Vec3 baryCoords;
+
+		// Constructeur par défaut
+		ExtrinsicElement() : type(Type::Vertex), reference(Dart()), baryCoords(0.0, 0.0, 0.0)
+		{
+		}
+
+		// Constructeur avec paramètres
+		ExtrinsicElement(Type t, Dart ref, Vec3 bary = Vec3(0.0, 0.0, 0.0)) : type(t), reference(ref), baryCoords(bary)
+		{
+		}
+	};
+
+public:
+	/**
+	 * Check if an edge satisfies the Delaunay condition.
+	 * @param dart A Dart representing the edge.
+	 * @param mesh The intrinsic triangulation.
+	 * @param epsilon A small positive threshold for numerical stability.
+	 * @return True if the edge satisfies the Delaunay condition, false otherwise.
+	 */
+	bool isDelaunay(Dart dart, const CMap2& mesh, Scalar epsilon = 0.00001)
+	{
+		Scalar cotanWeight = edgeCotanWeight(Edge(dart), mesh);
+
+		return cotanWeight >= -epsilon;
 	}
-	*/
+
+	bool isDelaunay(Edge edge, const CMap2& mesh)
+	{
+		Dart dart = Dart(edge);
+		return isDelaunay(dart, mesh);
+	}
+
+	bool isMeshDelaunay()
+	{
+		int edgeTested = 0;
+		int edgeNotDelaunay = 0;
+		bool isDelaunayBool = true;
+		foreach_cell(intr_, [&](Edge e) -> bool {
+			edgeTested++;
+			if (!isDelaunay(e, intr_))
+			{
+				isDelaunayBool = false;
+				edgeNotDelaunay++;
+			}
+			return true;
+		});
+		std::cout << "Le maillage est Delaunay : " << (isDelaunayBool ? "Oui" : "Non") << std::endl;
+		std::cout << "Nombre d'arêtes testées : " << edgeTested << std::endl;
+		std::cout << "Nombre d'arêtes non Delaunay : " << edgeNotDelaunay << std::endl;
+		return isDelaunayBool;
+	}
+
+	void flipToDelaunay(int maxFlippedEdge = 0)
+	{
+		size_t edgeTested = 0;
+		size_t edgeFlipped = 0;
+
+		// Créer un attribut booléen pour marquer les arêtes
+		auto edgeToProcess = add_attribute<bool, Edge>(intr_, "edge_to_process");
+
+		// Initialiser toutes les arêtes comme "à traiter"
+		parallel_foreach_cell(intr_, [&](Edge e) -> bool {
+			value<bool>(intr_, edgeToProcess, e) = true;
+			return true;
+		});
+
+		int iteration = 0;
+		bool hasChanges = true;
+		while (hasChanges)
+		{
+			isMeshDelaunay();
+			if (maxFlippedEdge > 0 && edgeFlipped >= maxFlippedEdge)
+			{
+				break;
+			}
+
+			/*
+			// Initialiser toutes les arêtes comme "à traiter" (temporaire, a enlever plus tard quand les arrete sont
+			bien ajoutées) parallel_foreach_cell(intr_, [&](Edge e) -> bool { value<bool>(intr_, edgeToProcess, e) =
+			true; return true;
+			});
+			*/
+
+			hasChanges = false;
+			iteration++;
+			std::cout << "Iteration : " << iteration << " edgeTested : " << edgeTested
+					  << " edgeFlipped : " << edgeFlipped << std::endl;
+
+			// Parcourir les arêtes marquées
+			foreach_cell(intr_, [&](Edge e) -> bool {
+				edgeTested++;
+				if (!value<bool>(intr_, edgeToProcess, e))
+				{
+					return true; // Ignorer les arêtes non marquées
+				}
+
+				// Vérifier si l'arête est Delaunay
+				if (isDelaunay(e, intr_))
+				{
+					value<bool>(intr_, edgeToProcess, e) = false; // Marquer comme traitée
+					return true;
+				}
+
+				// flip l'arrête
+				flip_edge(e);
+				edgeFlipped++;
+				hasChanges = true;
+
+				Dart d = e.dart_;
+
+				// Triangle 1 : (m, j, k)
+				Dart mj = phi1(intr_, d);
+				Dart jk = phi1(intr_, mj);
+
+				// Triangle 2 : (k, i, m)
+				Dart t2 = phi2(intr_, d);
+				Dart ki = phi1(intr_, t2);
+				Dart im = phi1(intr_, ki);
+
+				// Marquer les 4 arêtes
+				value<bool>(intr_, edgeToProcess, Edge(mj)) = true;
+				value<bool>(intr_, edgeToProcess, Edge(jk)) = true;
+				value<bool>(intr_, edgeToProcess, Edge(ki)) = true;
+				value<bool>(intr_, edgeToProcess, Edge(im)) = true;
+
+				return true;
+			});
+		}
+
+		// Supprimer l'attribut temporaire
+		remove_attribute<Edge>(intr_, edgeToProcess);
+
+		std::cout << "Edges tested: " << edgeTested << std::endl;
+		std::cout << "Edges flipped: " << edgeFlipped << std::endl;
+	}
+
+	void addExtrinsicElement(const Vertex& v, ExtrinsicElement::Type type, Dart reference)
+	{
+		value<ExtrinsicElement>(extr_, extrinsic_table_, v) = ExtrinsicElement(type, reference);
+	}
+
+	const ExtrinsicElement& getExtrinsicElement(const Vertex& v) const
+	{
+		return value<ExtrinsicElement>(extr_, extrinsic_table_, v);
+	}
+
+	void fillExtrinsicTable()
+	{
+		parallel_foreach_cell(intr_, [&](Vertex v) -> bool {
+			Dart extrinsic_dart = v.dart_;
+			addExtrinsicElement(v, ExtrinsicElement::Type::Vertex, extrinsic_dart);
+			return true;
+		});
+	}
 
 	/**
 	 * construct an intrinsic triangulation
@@ -75,6 +232,9 @@ public:
 	{
 		// copy topology for cmap2
 		copy(intr_, m);
+
+		extrinsic_table_ = add_attribute<ExtrinsicElement, Vertex>(intr_, "extr_table");
+		fillExtrinsicTable();
 
 		// compute edge length
 		edge_length_ = add_attribute<Scalar, Edge>(intr_, "intr_length");
@@ -88,16 +248,14 @@ public:
 
 		// compute angle sum
 		vertex_angle_sum_ = add_attribute<Scalar, Vertex>(intr_, "intr_angle_sum");
-		vertex_ref_ = add_attribute<Dart, Vertex>(intr_, "intr_ref");
 		halfedge_angle_ = add_attribute<Scalar, HalfEdge>(intr_, "intr_angle");
 		parallel_foreach_cell(intr_, [&](Vertex v) -> bool {
 			// sum interior angles
 			value<Scalar>(intr_, vertex_angle_sum_, v) = vertex_angle_sum(extr_, vertex_position_.get(), v);
 			// determine extrinsic reference
-			value<Dart>(intr_, vertex_ref_, v) = v.dart_;
-
+			const ExtrinsicElement& element = getExtrinsicElement(v);
 			// compute angle of each halfedge around vertex
-			Dart vdart = v.dart_;
+			Dart vdart = element.reference;
 			Dart it = phi<-1, 2>(intr_, vdart);
 			value<Scalar>(intr_, halfedge_angle_, HalfEdge(vdart)) = 0; // reference direction
 			while (it != vdart)
@@ -264,10 +422,12 @@ public:
 	std::vector<Vec3> trace(Dart d, int max_intersection = 100)
 	{
 		std::vector<Vec3> positions;
+		Vec3 position = value<Vec3>(intr_, vertex_position_, Vertex(d));
 		positions.push_back(value<Vec3>(intr_, vertex_position_, Vertex(d)));
 
 		// "un-normalize" the angle to get the trace direction
-		trace_parameters.crossed_dart = value<Dart>(intr_, vertex_ref_, Vertex(d));
+		const ExtrinsicElement& element = getExtrinsicElement(Vertex(d));
+		trace_parameters.crossed_dart = element.reference;
 		update_trace_parameter_through_vertex_(value<Scalar>(intr_, halfedge_angle_, HalfEdge(d)));
 
 		// the traced curve length
@@ -462,6 +622,53 @@ private:
 	}
 
 	/**
+	 * Compute the cotan weight of an edge in an intrinsic triangulation.
+	 * @param edge The edge ij of the intrinsic triangulation.
+	 * @param mesh The intrinsic triangulation.
+	 * @return The cotan weight of the edge.
+	 */
+	Scalar edgeCotanWeight(Edge edge, const CMap2& mesh)
+	{
+		Scalar totalWeight = 0.0;
+
+		// Obtenir les deux triangles adjacents à l'arête
+		Dart dart = Dart(edge);
+		Dart triangle1 = dart;
+		Dart triangle2 = phi2(mesh, dart);
+
+		// Parcourir les deux triangles adjacents
+		for (Dart triangle : {triangle1, triangle2})
+		{
+			if (triangle.is_nil())
+			{
+				continue; // Ignorer si l'arête est sur le bord
+			}
+
+			// Récupérer les longueurs des arêtes du triangle
+			Scalar lij = getLength(triangle);
+			Scalar ljk = getLength(phi1(mesh, triangle));
+			Scalar lki = getLength(phi1(mesh, phi1(mesh, triangle)));
+
+			// Calculer l'aire du triangle avec la fonction area_
+			Scalar area = area_(lij, ljk, lki);
+
+			// Vérifier si l'aire est valide
+			if (area <= 0.0)
+			{
+				std::cerr << "Invalid triangle area. Skipping triangle." << std::endl;
+				continue;
+			}
+
+			// Calculer le cotangente de l'angle opposé à l'arête ij
+			Scalar angleCotan = (ljk * ljk + lki * lki - lij * lij) / (4.0 * area);
+
+			// Ajouter le poids cotangent à la somme totale
+			totalWeight += angleCotan / 2.0;
+		}
+		return totalWeight;
+	}
+
+	/**
 	 * compute the interior angle of a triangle on point k from its lengths
 	 * @param ij edge adjacent to jk and ki, opposite to k
 	 * @param ki edge adjacent to ij and jk, incident to k
@@ -537,8 +744,10 @@ private:
 	const cgogn::CMap2& extr_;								 // extrinsic mesh
 	const std::shared_ptr<Attribute<Vec3>> vertex_position_; // extrinsic vertex position attribute
 
-	cgogn::CMap2 intr_;									  // intrinsic mesh
-	std::shared_ptr<Attribute<Dart>> vertex_ref_;		  // extrinsic link of intrinsic vertices
+	std::shared_ptr<Attribute<ExtrinsicElement>> extrinsic_table_; // Table intermédiaire (index -> élément extrinsèque)
+
+	cgogn::CMap2 intr_; // intrinsic mesh
+	// std::shared_ptr<Attribute<Dart>> vertex_ref_;		  // extrinsic link of intrinsic vertices
 	std::shared_ptr<Attribute<Scalar>> edge_length_;	  // intrinsic euclidian edge length
 	std::shared_ptr<Attribute<Scalar>> halfedge_angle_;	  // interior angle
 	std::shared_ptr<Attribute<Scalar>> vertex_angle_sum_; // vertex angle sum, avoid recomputing

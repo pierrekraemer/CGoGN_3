@@ -190,11 +190,16 @@ protected:
 
 				if (ImGui::Button("Compute path"))
 				{
+					std::cout << "update_path_from_vertex_set" << std::endl;
 					update_path_from_vertex_set();
+					std::cout << "intr" << std::endl;
 					intr =
 						std::make_shared<geometry::IntrinsicTriangulation>(*selected_mesh_, selected_vertex_position_);
+					std::cout << "update_intr_traced_set" << std::endl;
 					update_intr_traced_set();
+					std::cout << "update_vbo" << std::endl;
 					update_vbo();
+					std::cout << "fin" << std::endl;
 				}
 
 				if (ImGui::Button("Compute geodesic") || ImGui::InputInt("Flip out iterations", &flip_out_iteration))
@@ -218,6 +223,20 @@ protected:
 				if (ImGui::Checkbox("Show intrinsic mesh", &show_intr))
 				{
 					update_intr_traced_set();
+				}
+
+				if (ImGui::Button("Create intrinsic mesh"))
+				{
+					intr =
+						std::make_shared<geometry::IntrinsicTriangulation>(*selected_mesh_, selected_vertex_position_);
+				}
+				if (ImGui::Button("FlipToDelaunay"))
+				{
+					intr->flipToDelaunay();
+				}
+				if (ImGui::Button("isDelaunay"))
+				{
+					intr->isMeshDelaunay();
 				}
 			}
 		}

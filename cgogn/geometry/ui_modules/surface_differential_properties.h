@@ -43,14 +43,14 @@ namespace cgogn
 namespace ui
 {
 
-using geometry::Scalar;
-using geometry::Vec3;
-
 template <typename MESH>
 class SurfaceDifferentialProperties : public Module
 {
 	static_assert(mesh_traits<MESH>::dimension == 2,
 				  "SurfaceDifferentialProperties can only be used with meshes of dimension 2");
+
+	using Scalar = geometry::Scalar;
+	using Vec3 = geometry::Vec3;
 
 	template <typename T>
 	using Attribute = typename mesh_traits<MESH>::template Attribute<T>;

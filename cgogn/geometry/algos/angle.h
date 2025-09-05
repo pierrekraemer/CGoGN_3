@@ -160,24 +160,54 @@ void compute_angle(const MESH& m, const typename mesh_traits<MESH>::template Att
  * @returns the sum of interior angles around v
  */
 template <typename MESH>
-inline Scalar vertex_angle_sum(const MESH& m,
-							   const typename mesh_traits<MESH>::template Attribute<Vec3>* vertex_position,
-							   typename mesh_traits<MESH>::Vertex v)
+Scalar vertex_angle_sum(const MESH& m, const typename mesh_traits<MESH>::template Attribute<Vec3>* vertex_position,
+						typename mesh_traits<MESH>::Vertex v)
 {
 	using Vertex = typename mesh_traits<MESH>::Vertex;
 
-	Vec3 v_position = value<Vec3>(m, vertex_position, v);
+	const Vec3& v_position = value<Vec3>(m, vertex_position, v);
 	Scalar angle_sum{0};
 	std::vector<Vertex> vertices = adjacent_vertices_through_edge(m, v);
 
 	// sum incident directions angles
 	for (uint32 i = 0, size = uint32(vertices.size()); i < size; ++i)
 	{
-		Vec3 current_vertex = value<Vec3>(m, vertex_position, vertices[(i + 1) % size]);
-		Vec3 next_vertex = value<Vec3>(m, vertex_position, vertices[i]);
+		const Vec3& current_vertex = value<Vec3>(m, vertex_position, vertices[i]);
+		const Vec3& next_vertex = value<Vec3>(m, vertex_position, vertices[(i + 1) % size]);
 		angle_sum += angle(current_vertex - v_position, next_vertex - v_position);
 	}
 	return angle_sum;
+}
+
+///////////
+// CMap2 //
+///////////
+
+inline void compute_vertex_normalized_angles(const CMap2& m, const CMap2::Attribute<Vec3>* vertex_position,
+											 const CMap2::Attribute<CMap2::HalfEdge>* vertex_he_ref,
+											 CMap2::Attribute<Scalar>* halfedge_normalized_angle)
+{
+	using Vertex = CMap2::Vertex;
+	using HalfEdge = CMap2::HalfEdge;
+
+	parallel_foreach_cell(m, [&](Vertex v) -> bool {
+		Scalar total = vertex_angle_sum(m, vertex_position, v);
+
+		Dart d_ref = value<HalfEdge>(m, vertex_he_ref, v).dart_;
+		const Vec3& p = value<Vec3>(m, vertex_position, v);
+		Scalar acc = 0;
+		Dart it = d_ref;
+		do
+		{
+			value<Scalar>(m, halfedge_normalized_angle, HalfEdge(it)) = 2.0 * M_PI * acc / total;
+			const Vec3& p1 = value<Vec3>(m, vertex_position, Vertex(phi1(m, it)));
+			const Vec3& p2 = value<Vec3>(m, vertex_position, Vertex(phi_1(m, it)));
+			acc += angle(p1 - p, p2 - p);
+			it = phi2(m, phi_1(m, it));
+		} while (it != d_ref);
+
+		return true;
+	});
 }
 
 } // namespace geometry

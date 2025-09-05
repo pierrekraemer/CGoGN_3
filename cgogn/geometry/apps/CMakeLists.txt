@@ -11,7 +11,7 @@ find_package(cgogn_ui REQUIRED)
 find_package(cgogn_io REQUIRED)
 find_package(cgogn_rendering REQUIRED)
 
-find_package(Torch REQUIRED)
+find_package(Torch)
 if (Torch_FOUND)
 	message(STATUS "Torch found")
 	add_executable(ndf_skeleton ndf_skeleton.cpp)
@@ -38,6 +38,15 @@ target_link_libraries(filtering
 
 add_executable(heat_method heat_method.cpp)
 target_link_libraries(heat_method
+	cgogn::core
+	cgogn::ui
+	cgogn::io
+	cgogn::rendering
+	${CMAKE_DL_LIBS}
+)
+
+add_executable(vector_heat_method vector_heat_method.cpp)
+target_link_libraries(vector_heat_method
 	cgogn::core
 	cgogn::ui
 	cgogn::io

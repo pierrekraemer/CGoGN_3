@@ -133,7 +133,7 @@ void compute_geodesic_distance(MESH& m, const typename mesh_traits<MESH>::templa
 		geometry::cotan_operator_matrix(m, vertex_index.get(), vertex_position);
 
 	auto vertex_area = get_or_add_attribute<Scalar, Vertex>(m, "__vertex_area");
-	geometry::compute_area<Vertex>(m, vertex_position, vertex_area.get());
+	geometry::compute_area<Vertex>(m, vertex_position, vertex_area.get(), VertexAreaPolicy::THIRD);
 
 	Eigen::VectorXd A(nb_vertices);
 	parallel_foreach_cell(m, [&](Vertex v) -> bool {

@@ -225,6 +225,80 @@ Eigen::SparseMatrix<Scalar, Eigen::ColMajor> topo_laplacian_matrix(
 	return LAPL;
 }
 
+///////////
+// CMap2 //
+///////////
+
+inline Eigen::SparseMatrix<std::complex<Scalar>, Eigen::ColMajor> connection_cotan_operator_matrix(
+	const CMap2& m, const CMap2::Attribute<uint32>* vertex_index,
+	const CMap2::Attribute<Scalar>* halfedge_normalized_angle, const CMap2::Attribute<Vec3>* vertex_position)
+{
+	using Vertex = CMap2::Vertex;
+	using HalfEdge = CMap2::HalfEdge;
+	using Edge = CMap2::Edge;
+	using Face = CMap2::Face;
+
+	uint32 nb_vertices = nb_cells<Vertex>(m);
+	Eigen::SparseMatrix<std::complex<Scalar>, Eigen::ColMajor> LAPL(nb_vertices, nb_vertices);
+	std::vector<Eigen::Triplet<std::complex<Scalar>>> LAPLcoeffs;
+	LAPLcoeffs.reserve(9 * nb_cells<Face>(m));
+
+	foreach_cell(m, [&](Face f) -> bool {
+		Dart d0 = f.dart_;
+		Dart d1 = phi1(m, d0);
+		Dart d2 = phi1(m, d1);
+
+		Vertex vi{d0}, vj{d1}, vk{d2};
+
+		uint32 i = value<uint32>(m, vertex_index, vi);
+		uint32 j = value<uint32>(m, vertex_index, vj);
+		uint32 k = value<uint32>(m, vertex_index, vk);
+
+		const Vec3& pi = value<Vec3>(m, vertex_position, vi);
+		const Vec3& pj = value<Vec3>(m, vertex_position, vj);
+		const Vec3& pk = value<Vec3>(m, vertex_position, vk);
+
+		Vec3 u_ij = pj - pi;
+		Vec3 v_ik = pk - pi;
+		Scalar a = u_ij.dot(v_ik) / u_ij.cross(v_ik).norm();
+
+		Vec3 u_jk = pk - pj;
+		Vec3 v_ji = pi - pj;
+		Scalar b = u_jk.dot(v_ji) / u_jk.cross(v_ji).norm();
+
+		Vec3 u_ki = pi - pk;
+		Vec3 v_kj = pj - pk;
+		Scalar c = u_ki.dot(v_kj) / u_ki.cross(v_kj).norm();
+
+		Scalar angle_ij = value<Scalar>(m, halfedge_normalized_angle, HalfEdge(d0));
+		Scalar angle_ji = value<Scalar>(m, halfedge_normalized_angle, HalfEdge(phi2(m, d0)));
+		Scalar angle_jk = value<Scalar>(m, halfedge_normalized_angle, HalfEdge(d1));
+		Scalar angle_kj = value<Scalar>(m, halfedge_normalized_angle, HalfEdge(phi2(m, d1)));
+		Scalar angle_ki = value<Scalar>(m, halfedge_normalized_angle, HalfEdge(d2));
+		Scalar angle_ik = value<Scalar>(m, halfedge_normalized_angle, HalfEdge(phi2(m, d2)));
+
+		std::complex<Scalar> r_ij = std::polar(Scalar(1.0), (angle_ji + M_PI) - angle_ij);
+		std::complex<Scalar> r_jk = std::polar(Scalar(1.0), (angle_kj + M_PI) - angle_jk);
+		std::complex<Scalar> r_ik = std::polar(Scalar(1.0), (angle_ki + M_PI) - angle_ik);
+
+		LAPLcoeffs.emplace_back(i, i, std::complex<Scalar>(-(b + c) / 2, 0));
+		LAPLcoeffs.emplace_back(j, j, std::complex<Scalar>(-(c + a) / 2, 0));
+		LAPLcoeffs.emplace_back(k, k, std::complex<Scalar>(-(a + b) / 2, 0));
+
+		LAPLcoeffs.emplace_back(i, j, (c / 2) * r_ij);
+		LAPLcoeffs.emplace_back(i, k, (b / 2) * r_ik);
+		LAPLcoeffs.emplace_back(j, i, (c / 2) * std::conj(r_ij));
+		LAPLcoeffs.emplace_back(j, k, (a / 2) * r_jk);
+		LAPLcoeffs.emplace_back(k, i, (b / 2) * std::conj(r_ik));
+		LAPLcoeffs.emplace_back(k, j, (a / 2) * std::conj(r_jk));
+
+		return true;
+	});
+
+	LAPL.setFromTriplets(LAPLcoeffs.begin(), LAPLcoeffs.end());
+	return LAPL;
+}
+
 } // namespace geometry
 
 } // namespace cgogn

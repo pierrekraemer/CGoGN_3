@@ -230,8 +230,11 @@ protected:
 			std::cout << "CUDA is available! Using the GPU." << std::endl;
 			device_ = torch::kCUDA;
 		}
-		std::cout << "CUDA is not available! Using the CPU." << std::endl;
-		device_ = torch::kCPU;
+		else
+		{
+			std::cout << "CUDA is not available! Using the CPU." << std::endl;
+			device_ = torch::kCPU;
+		}
 	}
 
 	void left_panel() override
